@@ -2,7 +2,7 @@ import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import bcrypt
-from datetime import datetime
+from datetime import datetime,timezone
 
 load_dotenv()
 
@@ -29,14 +29,14 @@ def seed_default_users():
                 "password": bcrypt.hashpw(b"admin123", bcrypt.gensalt()),
                 "role": "admin",
                 "name": "Administrator",
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
             },
             {
                 "username": "student1",
                 "password": bcrypt.hashpw(b"student123", bcrypt.gensalt()),
                 "role": "student",
                 "name": "Student One",
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
             },
         ])
 
