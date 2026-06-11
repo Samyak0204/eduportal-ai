@@ -48,18 +48,26 @@ def _load_question_into_state(q, edit_mode=False):
     st.session_state["q_template_title"] = q["title"]
     st.session_state["q_template_type"] = q["type"]
     st.session_state["q_template_text"] = q["text"]
+    st.session_state["q_template_is_multi_correct"] = q.get("is_multi_correct", False)
+    
     if "options" in q:
         st.session_state["q_template_opt_a"] = q["options"].get("A", "")
         st.session_state["q_template_opt_b"] = q["options"].get("B", "")
         st.session_state["q_template_opt_c"] = q["options"].get("C", "")
         st.session_state["q_template_opt_d"] = q["options"].get("D", "")
-        st.session_state["q_template_correct"] = q["correct_option"]
+        
+        correct = q.get("correct_option", "A")
+        if isinstance(correct, list):
+            st.session_state["q_template_correct"] = correct
+        else:
+            st.session_state["q_template_correct"] = [correct] if correct else ["A"]
     else:
         st.session_state["q_template_opt_a"] = ""
         st.session_state["q_template_opt_b"] = ""
         st.session_state["q_template_opt_c"] = ""
         st.session_state["q_template_opt_d"] = ""
-        st.session_state["q_template_correct"] = "A"
+        st.session_state["q_template_correct"] = ["A"]
+        
     st.session_state["q_template_explanation"] = q.get("explanation", "")
     st.session_state["q_template_marks"] = q["marks"]
     st.session_state["q_template_difficulty"] = q["difficulty"]
@@ -124,11 +132,26 @@ def _render_question_form(edit_qid=None):
             opt_c = st.text_input("Option C", key="q_template_opt_c")
             opt_d = st.text_input("Option D", key="q_template_opt_d")
             
-            try:
-                correct_idx = ["A", "B", "C", "D"].index(st.session_state.get("q_template_correct", "A"))
-            except ValueError:
-                correct_idx = 0
-            correct_option = st.selectbox("Correct Answer", ["A", "B", "C", "D"], index=correct_idx, key="q_template_correct")
+            is_multi = st.checkbox("Allow Multiple Correct Answers (Multi-Select)", key="q_template_is_multi_correct")
+            
+            default_correct = st.session_state.get("q_template_correct", ["A"])
+            if isinstance(default_correct, str):
+                default_correct = [default_correct]
+            elif not isinstance(default_correct, list):
+                default_correct = ["A"]
+                
+            if is_multi:
+                correct_option = st.multiselect("Correct Answer(s)", ["A", "B", "C", "D"], default=default_correct, key="q_template_correct_multiselect")
+                st.session_state["q_template_correct"] = correct_option
+            else:
+                single_default = default_correct[0] if default_correct else "A"
+                try:
+                    correct_idx = ["A", "B", "C", "D"].index(single_default)
+                except ValueError:
+                    correct_idx = 0
+                correct_option = st.selectbox("Correct Answer", ["A", "B", "C", "D"], index=correct_idx, key="q_template_correct_single")
+                st.session_state["q_template_correct"] = [correct_option]
+                
             allowed_formats = ["Text"]
         else:
             ideal_answer = st.text_area(
@@ -213,7 +236,8 @@ def _render_question_form(edit_qid=None):
 
         if q_type == "Multiple Choice" and opt_a:
             doc["options"] = {"A": opt_a, "B": opt_b, "C": opt_c, "D": opt_d}
-            doc["correct_option"] = correct_option
+            doc["correct_option"] = st.session_state.get("q_template_correct", ["A"])
+            doc["is_multi_correct"] = st.session_state.get("q_template_is_multi_correct", False)
         elif ideal_answer and ideal_answer.strip():
             doc["ideal_answer"] = ideal_answer.strip()
 
@@ -316,8 +340,10 @@ def _manage_questions_tab(questions):
             if "image_bytes" in q:
                 st.image(q["image_bytes"], caption="Attached Image", use_column_width=True)
             if "options" in q:
+                correct_opts = q.get("correct_option", [])
+                correct_list = [correct_opts] if isinstance(correct_opts, str) else correct_opts
                 for k, v in q["options"].items():
-                    marker = "✅" if k == q.get("correct_option") else "  "
+                    marker = "✅" if k in correct_list else "  "
                     st.markdown(f"{marker} **{k}.** {v}")
             if "ideal_answer" in q:
                 st.info(f"💡 **Ideal Answer / Rubric:**\n\n{q['ideal_answer']}")

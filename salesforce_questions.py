@@ -45,19 +45,20 @@ DUMMY_QUESTIONS = [
         "allowed_formats": ["Image", "Text"]
     },
     {
-        "title": "Salesforce Automation: Process Execution Order",
+        "title": "Salesforce Automation: Post-Validation Automations",
         "type": "Multiple Choice",
-        "text": "In Salesforce, which of the following automations executes FIRST when a record is saved?",
+        "text": "In Salesforce, which of the following automations execute AFTER custom Validation Rules run during a record save? (Select all that apply)",
         "options": {
             "A": "Escalation Rules",
             "B": "Assignment Rules",
-            "C": "Validation Rules (system and custom)",
-            "D": "Workflow Rules"
+            "C": "Workflow Rules",
+            "D": "Before-Save Flows"
         },
-        "correct_option": "C",
-        "explanation": "Salesforce executes system and custom validation rules before executing other automation rules like Assignment Rules, Auto-Response Rules, Workflow Rules, Processes, and Escalation Rules.",
-        "difficulty": "Easy",
-        "marks": 5,
+        "correct_option": ["A", "B", "C"],
+        "is_multi_correct": True,
+        "explanation": "During a record save, Salesforce validation rules run before Assignment Rules, Workflow Rules, and Escalation Rules. Before-Save flows run BEFORE validation rules. Thus, A, B, and C execute after validation rules.",
+        "difficulty": "Medium",
+        "marks": 10,
         "allowed_formats": ["Text"]
     }
 ]

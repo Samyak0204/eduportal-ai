@@ -132,21 +132,52 @@ def _active_test_page():
     st.markdown("#### Your Answer")
 
     if q["type"] == "Multiple Choice":
-        # MCQ Single Choice Choice Selection
-        options_list = list(q["options"].keys())
-        default_idx = 0
-        if ans_state["answer_text"] in options_list:
-            default_idx = options_list.index(ans_state["answer_text"])
+        is_multi = q.get("is_multi_correct", False)
+        correct_opt = q.get("correct_option")
+        if not is_multi and isinstance(correct_opt, list) and len(correct_opt) > 1:
+            is_multi = True
 
-        selected_opt = st.radio(
-            "Choose your answer:",
-            options_list,
-            format_func=lambda x: f"{x}. {q['options'][x]}",
-            index=default_idx,
-            key=f"active_mcq_{qid}"
-        )
-        ans_state["answer_text"] = selected_opt
-        ans_state["answer_type"] = "Text"
+        if is_multi:
+            # Render Checkboxes for Multi-Select MCQ
+            current_selection = ans_state.get("answer_text")
+            if isinstance(current_selection, str):
+                current_list = [opt.strip() for opt in current_selection.split(",") if opt.strip()]
+            elif isinstance(current_selection, list):
+                current_list = current_selection
+            else:
+                current_list = []
+
+            st.markdown("Select all correct options:")
+            selected_options = []
+            for k, v in q["options"].items():
+                checked = st.checkbox(
+                    f"{k}. {v}",
+                    value=(k in current_list),
+                    key=f"mcq_cb_{qid}_{k}"
+                )
+                if checked:
+                    selected_options.append(k)
+            ans_state["answer_text"] = selected_options
+            ans_state["answer_type"] = "Text"
+        else:
+            # MCQ Single Choice Choice Selection (Radio)
+            options_list = list(q["options"].keys())
+            default_idx = 0
+            current_sel = ans_state.get("answer_text")
+            if isinstance(current_sel, list):
+                current_sel = current_sel[0] if current_sel else ""
+            if current_sel in options_list:
+                default_idx = options_list.index(current_sel)
+
+            selected_opt = st.radio(
+                "Choose your answer:",
+                options_list,
+                format_func=lambda x: f"{x}. {q['options'][x]}",
+                index=default_idx,
+                key=f"active_mcq_{qid}"
+            )
+            ans_state["answer_text"] = selected_opt
+            ans_state["answer_type"] = "Text"
 
     else:
         # Check allowed formats specified by the admin
@@ -295,26 +326,50 @@ def _submit_and_evaluate_exam():
             correct = q.get("correct_option")
             explanation = q.get("explanation", "No explanation provided.")
 
-            is_correct = (selected == correct)
-            score = q["marks"] if is_correct else 0
-            verdict = "Correct" if is_correct else "Incorrect"
+            # Normalize selected and correct to sets of options
+            if isinstance(selected, str):
+                selected_set = {selected} if selected else set()
+            elif isinstance(selected, list):
+                selected_set = set(selected)
+            else:
+                selected_set = set()
 
-            eval_text = f"""## Verdict
+            if isinstance(correct, str):
+                correct_set = {correct}
+            elif isinstance(correct, list):
+                correct_set = set(correct)
+            else:
+                correct_set = set()
+
+            if selected_set == correct_set:
+                verdict = "Correct"
+                score = q["marks"]
+            elif selected_set.issubset(correct_set) and len(selected_set) > 0:
+                verdict = "Partially Correct"
+                score = int(q["marks"] * (len(selected_set) / len(correct_set)))
+            else:
+                verdict = "Incorrect"
+                score = 0
+
+            selected_str = ", ".join(sorted(list(selected_set))) if selected_set else "None"
+            correct_str = ", ".join(sorted(list(correct_set)))
+
+            eval_text = f"""## ✅ Verdict
 {verdict}
 
-## Score
+## 📊 Score
 {score} / {q['marks']} (Automatically Scored)
 
-## Analysis
-The student selected option **{selected or 'None'}**. The correct option is **{correct}**.
+## 🔍 Analysis
+The student selected option(s): **{selected_str}**. The correct option(s): **{correct_str}**.
 
-## Correct Answer & Explanation
-**Correct Option: {correct}**
+## 💡 Correct Answer & Explanation
+**Correct Option(s): {correct_str}**
 
 {explanation}
 
-## Suggestions
-{"Excellent! You got the answer right." if is_correct else "Review the explanation above to understand this concept better."}
+## 📝 Suggestions
+{"Excellent! You got the answer fully right." if verdict == "Correct" else "You got some options right but missed others. Review the explanation above to understand this concept better." if verdict == "Partially Correct" else "Review the explanation above to understand this concept better."}
 """
             doc = {
                 "student_username": username,
@@ -325,7 +380,7 @@ The student selected option **{selected or 'None'}**. The correct option is **{c
                 "question_text": q["text"],
                 "question_type": q["type"],
                 "answer_type": "Text",
-                "answer_text": f"Option {selected}" if selected else "No answer selected",
+                "answer_text": f"Option(s) {selected_str}",
                 "evaluation": eval_text,
                 "submitted_at": datetime.now(timezone.utc),
             }
@@ -336,14 +391,14 @@ The student selected option **{selected or 'None'}**. The correct option is **{c
                 "title": q["title"],
                 "text": q["text"],
                 "type": q["type"],
-                "selected": selected,
-                "correct": correct,
+                "selected": list(selected_set),
+                "correct": list(correct_set),
                 "explanation": explanation,
                 "score": score,
                 "max_score": q["marks"],
                 "evaluation": eval_text,
                 "ans_type": "Text",
-                "answer_text": selected
+                "answer_text": selected_str
             })
 
         # 2. AI Evaluation
