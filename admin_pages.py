@@ -113,6 +113,11 @@ def _render_question_form(edit_qid=None):
     elif q_type == "Multiple Choice":
         st.info("💡 **Tip:** Provide Option A, B, C, and D details below. The student will select their choice.")
 
+    # Render checkbox outside the form to trigger immediate rerun and toggle selectbox/multiselect
+    is_multi = False
+    if q_type == "Multiple Choice":
+        is_multi = st.checkbox("Allow Multiple Correct Answers (Multi-Select)", key="q_template_is_multi_correct")
+
     with st.form("edit_question_form" if is_editing else "upload_question_form", clear_on_submit=not is_editing):
         title = st.text_input("Question Title / Label", placeholder="e.g. Q1 - Python Basics", key="q_template_title")
         question_text = st.text_area("Question Text", height=150, placeholder="Enter the full question here...", key="q_template_text")
@@ -131,8 +136,6 @@ def _render_question_form(edit_qid=None):
             opt_b = st.text_input("Option B", key="q_template_opt_b")
             opt_c = st.text_input("Option C", key="q_template_opt_c")
             opt_d = st.text_input("Option D", key="q_template_opt_d")
-            
-            is_multi = st.checkbox("Allow Multiple Correct Answers (Multi-Select)", key="q_template_is_multi_correct")
             
             default_correct = st.session_state.get("q_template_correct", ["A"])
             if isinstance(default_correct, str):
@@ -357,14 +360,14 @@ def _manage_questions_tab(questions):
             col_qm1, col_qm2 = st.columns([1, 6])
             with col_qm1:
                 st.button(
-                    "✏️ Edit", 
+                    "Edit", 
                     key=f"edit_btn_{q['_id']}", 
                     use_container_width=True,
                     on_click=_load_question_into_state,
                     args=(q, True)
                 )
             with col_qm2:
-                if st.button(f"🗑️ Delete", key=f"del_{q['_id']}"):
+                if st.button(f"Delete", key=f"del_{q['_id']}"):
                     delete_question(str(q["_id"]))
                     st.warning("Question deleted.")
                     st.rerun()

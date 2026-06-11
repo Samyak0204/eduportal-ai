@@ -18,6 +18,27 @@ from salesforce_questions import DUMMY_QUESTIONS
 
 
 def student_dashboard():
+    username = st.session_state.user["username"]
+
+    # Try to load saved active exam state on first session load
+    if "test_active" not in st.session_state:
+        from db import get_active_exam_state
+        saved_state = get_active_exam_state(username)
+        if saved_state:
+            st.session_state["test_active"] = saved_state.get("test_active", False)
+            st.session_state["hardware_verified"] = saved_state.get("hardware_verified", False)
+            st.session_state["camera_checked"] = saved_state.get("camera_checked", False)
+            st.session_state["mic_checked"] = saved_state.get("mic_checked", False)
+            st.session_state["current_question_index"] = saved_state.get("current_question_index", 0)
+            st.session_state["student_details"] = saved_state.get("student_details", {})
+            st.session_state["answers"] = saved_state.get("answers", {})
+            st.session_state["test_questions"] = saved_state.get("test_questions", [])
+            st.session_state["prev_student_id"] = saved_state.get("student_details", {}).get("id", "")
+            st.session_state["prev_student_email"] = saved_state.get("student_details", {}).get("email", "")
+        else:
+            st.session_state["test_active"] = False
+            st.session_state["hardware_verified"] = False
+
     # Check if a test has just been submitted to show summary
     if st.session_state.get("test_submitted"):
         _render_submission_summary()
@@ -25,16 +46,34 @@ def student_dashboard():
 
     st.markdown(f"### Welcome, {st.session_state.user['name']}")
 
-    tab1, tab2 = st.tabs(["Test Room", "Results History"])
-
-    with tab1:
-        if not st.session_state.get("test_active"):
-            _landing_page()
+    # If test is active, show only a single page without tabs
+    if st.session_state.get("test_active"):
+        if not st.session_state.get("hardware_verified"):
+            _hardware_verification_page()
         else:
             _active_test_page()
-
-    with tab2:
-        _results_tab()
+            
+        # Save state to DB on every rerun while test is active
+        from db import save_active_exam_state
+        state_doc = {
+            "test_active": True,
+            "hardware_verified": st.session_state.get("hardware_verified", False),
+            "camera_checked": st.session_state.get("camera_checked", False),
+            "mic_checked": st.session_state.get("mic_checked", False),
+            "current_question_index": st.session_state.get("current_question_index", 0),
+            "student_details": st.session_state.get("student_details", {}),
+            "answers": st.session_state.get("answers", {}),
+            "test_questions": st.session_state.get("test_questions", [])
+        }
+        save_active_exam_state(username, state_doc)
+        
+    else:
+        # Show tabs only when not actively in an exam
+        tab1, tab2 = st.tabs(["Test Room", "Results History"])
+        with tab1:
+            _landing_page()
+        with tab2:
+            _results_tab()
 
 
 def _landing_page():
@@ -51,10 +90,12 @@ def _landing_page():
     </div>
     """, unsafe_allow_html=True)
 
-    # Check if there are questions in DB, otherwise fallback to Salesforce dummy questions
-    questions = get_all_questions()
-    if not questions:
-        questions = DUMMY_QUESTIONS
+    # Combine custom questions from database and default Salesforce template questions (avoiding duplicates by title)
+    db_questions = get_all_questions()
+    db_titles = {q["title"] for q in db_questions}
+    unique_dummy = [q for q in DUMMY_QUESTIONS if q["title"] not in db_titles]
+    questions = db_questions + unique_dummy
+    if not db_questions:
         st.info("Note: No custom questions uploaded yet. You will be taking the default Salesforce sample assessment.")
 
     st.markdown("### 👤 Enter Candidate Details")
@@ -80,10 +121,97 @@ def _landing_page():
                 "email": student_email
             }
             st.session_state["test_active"] = True
+            st.session_state["hardware_verified"] = False
+            st.session_state["camera_checked"] = False
+            st.session_state["mic_checked"] = False
             st.session_state["current_question_index"] = 0
             st.session_state["answers"] = {}
             st.session_state["test_questions"] = questions
             st.rerun()
+
+
+def _hardware_verification_page():
+    st.markdown("### 🛠️ Hardware & Permission Verification")
+    st.markdown(
+        "Before starting the assessment, we need to verify your webcam and microphone hardware. "
+        "Please grant browser permissions to this site when prompted."
+    )
+
+    details = st.session_state.get("student_details", {})
+    st.info(f"👤 **Candidate Details Registered:**  \n**Name:** {details.get('name')} | **ID:** {details.get('id')} | **Email:** {details.get('email')}")
+    st.divider()
+
+    col_chk1, col_chk2 = st.columns(2)
+    
+    # Camera Check
+    with col_chk1:
+        st.markdown("##### 📸 Camera Check")
+        cam_placeholder = st.empty()
+        
+        captured_test = st.camera_input("Take a quick snapshot to verify your webcam:", key="check_cam_input")
+        if captured_test:
+            st.session_state["camera_checked"] = True
+            cam_placeholder.success("📸 Camera: Verified Successfully!")
+        else:
+            st.session_state["camera_checked"] = False
+            cam_placeholder.warning("📸 Camera: Pending Verification")
+
+    # Microphone Check
+    with col_chk2:
+        st.markdown("##### 🎙️ Microphone Check")
+        mic_placeholder = st.empty()
+        
+        try:
+            from streamlit_mic_recorder import mic_recorder
+            audio_test_data = mic_recorder(
+                start_prompt="🎙️ Start Audio Test",
+                stop_prompt="⏹️ Stop Audio Test",
+                key="check_mic_input"
+            )
+            if audio_test_data and audio_test_data.get("bytes"):
+                st.session_state["mic_checked"] = True
+                mic_placeholder.success("🎙️ Microphone: Verified Successfully!")
+                st.audio(audio_test_data["bytes"], format="audio/wav")
+            else:
+                st.session_state["mic_checked"] = False
+                mic_placeholder.warning("🎙️ Microphone: Pending Verification")
+        except ImportError:
+            # Fallback if mic recorder is not installed
+            st.session_state["mic_checked"] = True
+            mic_placeholder.success("🎙️ Microphone: Verified (Mocked)")
+
+    st.divider()
+
+    camera_ok = st.session_state.get("camera_checked", False)
+    mic_ok = st.session_state.get("mic_checked", False)
+    hardware_verified = camera_ok and mic_ok
+
+    if not hardware_verified:
+        st.warning("⚠️ Both camera and microphone tests must pass to unlock the start button. If you just allowed permissions, click 'Refresh Page' below for browser settings to take effect.")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            st.button("🔄 Refresh Page", use_container_width=True)
+        with col_btn2:
+            if st.button("⬅️ Cancel & Back to Landing Page", use_container_width=True):
+                from db import delete_active_exam_state
+                delete_active_exam_state(username)
+                st.session_state["test_active"] = False
+                st.session_state["hardware_verified"] = False
+                st.rerun()
+    else:
+        st.success("✅ All systems checked! You are ready to start.")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🚀 Proceed to Exam Questions", type="primary", use_container_width=True):
+                st.session_state["hardware_verified"] = True
+                st.rerun()
+        with col_btn2:
+            if st.button("⬅️ Cancel & Back to Landing Page", use_container_width=True):
+                from db import delete_active_exam_state
+                delete_active_exam_state(username)
+                st.session_state["test_active"] = False
+                st.session_state["hardware_verified"] = False
+                st.rerun()
 
 
 def _active_test_page():
@@ -494,9 +622,14 @@ Please make sure to attempt all questions by providing text, audio, or image ans
     progress_bar.progress(1.0)
     status_text.text("Exam submitted and evaluated successfully!")
 
+    # Clear saved active exam state upon successful submission
+    from db import delete_active_exam_state
+    delete_active_exam_state(username)
+
     st.session_state["submission_results"] = results
     st.session_state["test_submitted"] = True
     st.session_state["test_active"] = False
+    st.session_state["hardware_verified"] = False
     st.rerun()
 
 

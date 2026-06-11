@@ -123,3 +123,22 @@ def submission_exists(student_username: str, question_id: str):
         "student_username": student_username,
         "question_id": question_id
     }) is not None
+
+
+# ── Active Exam State Persistence ──────────────────────────────────────────
+
+def save_active_exam_state(username: str, state_doc: dict):
+    db = get_db()
+    db.active_exams.update_one(
+        {"username": username},
+        {"$set": state_doc},
+        upsert=True
+    )
+
+def get_active_exam_state(username: str):
+    db = get_db()
+    return db.active_exams.find_one({"username": username})
+
+def delete_active_exam_state(username: str):
+    db = get_db()
+    db.active_exams.delete_one({"username": username})

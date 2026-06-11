@@ -330,7 +330,60 @@ def main():
         login_screen()
         return
 
-    render_sidebar()
+    # Restore active exam state for student immediately on load so sidebar check and dashboard see correct state
+    if st.session_state.user and st.session_state.user["role"] == "student" and "test_active" not in st.session_state:
+        from db import get_active_exam_state
+        username = st.session_state.user["username"]
+        saved_state = get_active_exam_state(username)
+        if saved_state:
+            st.session_state["test_active"] = saved_state.get("test_active", False)
+            st.session_state["hardware_verified"] = saved_state.get("hardware_verified", False)
+            st.session_state["camera_checked"] = saved_state.get("camera_checked", False)
+            st.session_state["mic_checked"] = saved_state.get("mic_checked", False)
+            st.session_state["current_question_index"] = saved_state.get("current_question_index", 0)
+            st.session_state["student_details"] = saved_state.get("student_details", {})
+            st.session_state["answers"] = saved_state.get("answers", {})
+            st.session_state["test_questions"] = saved_state.get("test_questions", [])
+            st.session_state["prev_student_id"] = saved_state.get("student_details", {}).get("id", "")
+            st.session_state["prev_student_email"] = saved_state.get("student_details", {}).get("email", "")
+        else:
+            st.session_state["test_active"] = False
+            st.session_state["hardware_verified"] = False
+
+    # Check if student is actively taking a test (hardware verification or questions)
+    is_test_active = False
+    if st.session_state.user and st.session_state.user["role"] == "student" and st.session_state.get("test_active"):
+        is_test_active = True
+
+    if is_test_active:
+        st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {
+                display: none !important;
+            }
+            [data-testid="stSidebarCollapseButton"] {
+                display: none !important;
+            }
+            section[data-testid="stSidebar"] {
+                display: none !important;
+            }
+            /* Make main content full width */
+            .stApp [data-testid="stHeader"] {
+                left: 0px !important;
+            }
+            .stApp [data-testid="stMain"] {
+                margin-left: 0px !important;
+                left: 0px !important;
+            }
+            .stApp section[data-testid="stMain"] {
+                width: 100% !important;
+                left: 0px !important;
+                margin-left: 0px !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        render_sidebar()
 
     role = st.session_state.user["role"]
 
