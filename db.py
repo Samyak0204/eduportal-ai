@@ -58,7 +58,7 @@ def create_user(username: str, password: str, role: str, name: str):
         "password": bcrypt.hashpw(password.encode(), bcrypt.gensalt()),
         "role": role,
         "name": name,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
     })
     return True, "User created"
 
@@ -91,6 +91,12 @@ def delete_question(qid: str):
     from bson import ObjectId
     db = get_db()
     db.questions.delete_one({"_id": ObjectId(qid)})
+
+
+def update_question(qid: str, question_doc: dict):
+    from bson import ObjectId
+    db = get_db()
+    db.questions.update_one({"_id": ObjectId(qid)}, {"$set": question_doc})
 
 
 # ── Submissions ────────────────────────────────────────────────────────────

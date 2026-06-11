@@ -1,4 +1,17 @@
 import streamlit as st
+import importlib
+
+import db
+import admin_pages
+import student_pages
+import gemini_eval
+
+# Force reload modules so Streamlit picks up changes without needing a server restart
+importlib.reload(db)
+importlib.reload(admin_pages)
+importlib.reload(student_pages)
+importlib.reload(gemini_eval)
+
 from db import seed_default_users, verify_user, get_db
 from admin_pages import admin_dashboard
 from student_pages import student_dashboard
@@ -214,6 +227,21 @@ if "user" not in st.session_state:
 if "db_seeded" not in st.session_state:
     st.session_state.db_seeded = False
 
+# Try auto-login from query parameters on page refresh
+if st.session_state.user is None and "logged_in_user" in st.query_params:
+    username = st.query_params["logged_in_user"]
+    try:
+        db = get_db()
+        db_user = db.users.find_one({"username": username})
+        if db_user:
+            st.session_state.user = {
+                "username": db_user["username"],
+                "role": db_user["role"],
+                "name": db_user["name"]
+            }
+    except Exception:
+        pass
+
 
 # ── Seed DB once ───────────────────────────────────────────────────────────
 def try_seed():
@@ -243,21 +271,22 @@ def login_screen():
             password = st.text_input("Password", type="password", placeholder="Enter your password")
             submitted = st.form_submit_button("🔐 Sign In", use_container_width=True)
 
-        if submitted:
-            if not username or not password:
-                st.error("Please enter both username and password.")
+    if submitted:
+        if not username or not password:
+            st.error("Please enter both username and password.")
+        else:
+            user = verify_user(username, password)
+            if user:
+                st.session_state.user = user
+                st.query_params["logged_in_user"] = user["username"]
+                st.rerun()
             else:
-                user = verify_user(username, password)
-                if user:
-                    st.session_state.user = user
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid username or password.")
+                st.error("❌ Invalid username or password.")
 
-        st.divider()
-        st.caption("**Default credentials (change after setup):**")
-        st.caption("Admin: `admin` / `admin123`")
-        st.caption("Student: `student1` / `student123`")
+    st.divider()
+    st.caption("**Default credentials (change after setup):**")
+    st.caption("Admin: `admin` / `admin123`")
+    st.caption("Student: `student1` / `student123`")
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────
@@ -284,6 +313,8 @@ def render_sidebar():
 
         if st.button("🚪 Sign Out", use_container_width=True):
             st.session_state.user = None
+            if "logged_in_user" in st.query_params:
+                del st.query_params["logged_in_user"]
             st.rerun()
 
         st.divider()
