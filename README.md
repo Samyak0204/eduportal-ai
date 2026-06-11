@@ -95,19 +95,24 @@ portal_app/
 ## 🎯 Features
 
 ### Admin
-- Upload questions: MCQ, Essay, Math, Code, Image-based
-- Attach images to questions
-- View all student submissions with Gemini evaluations
-- Manage student accounts
+- **Flexible Question Upload**: Support MCQ (Single & Multi-Select), Essay, Math, Code, and Image-based questions.
+- **Dynamic MCQ Selection**: Dynamic form switches between `st.selectbox` and `st.multiselect` depending on the "Allow Multiple Correct Answers" setting.
+- **Inline Question Editor**: Edit existing questions directly in the question manager without losing previously uploaded image assets.
+- **Salesforce Template Loader**: Load 5 predefined Salesforce template questions instantly to populate fields and seed the database.
+- **Custom Grading Rationale**: Set custom explanation/rationale text to be displayed to students on evaluation.
+- **Format Restrictions**: Configure specifically allowed answer formats (Text, Image, and/or Audio) per question.
+- **Submission Hub**: Monitor student results, scores, and Gemini AI evaluations.
 
 ### Student
-- View all available questions
-- Submit answers in 3 formats:
-  - ✏️ **Text** — typed or MCQ selection
-  - 🖼️ **Image** — upload handwritten/diagram answer
-  - 🎙️ **Audio** — upload or record spoken answer
-- Get instant Gemini evaluation with score, analysis & correct answer
-- View submission history
+- **Secure Landing Screen**: Student ID, Name, and Email entry form to unlock and begin the test.
+- **Intermediate Hardware Verification Page**: Dedicated screen to verify webcam (using `st.camera_input`) and microphone permissions before opening the exam. Includes a `🔄 Refresh Page` helper if permissions were blocked.
+- **Exam Integrity Layout**: Bypasses Streamlit's tab containers and sidebar (Sign Out button) completely during the exam, providing a focused, full-width workspace.
+- **Browser Reload Persistence**: Current question index, student details, hardware checks, and all inputted answers persist in MongoDB across tab reloads and browser crashes.
+- **Sequential Exam Sequence**: One question per page navigation (`⬅️ Previous`, `Next ➡️` / `Submit 🚀`) with active progress tracking.
+- **Dynamic Format Tabs**: Renders only the input formats allowed by the administrator for each specific question.
+- **Instant MCQ Auto-Grading**: Saves Gemini API quota by programmatically auto-grading MCQs upon submission. Supports **proportional subset scoring** for multi-correct MCQs (points awarded for correct subsets, zeroed if any wrong choices are checked).
+- **Consolidated AI Evaluations**: Graded all at once at submit-time, with empty answers intercepted locally to output `0/10` instantly.
+- **Results History**: Persistent dashboard tab showing full breakdown of past submissions.
 
 ---
 
@@ -117,13 +122,13 @@ Each evaluation includes:
 - ✅ **Verdict** — Correct / Partially Correct / Incorrect
 - 📊 **Score** — out of 10
 - 🔍 **Analysis** — detailed breakdown
-- 💡 **Correct Answer** — ideal response
+- 💡 **Correct Answer & Explanation** — custom rationale and answers
 - 📝 **Suggestions** — improvement tips
 
 ---
 
 ## ⚠️ Notes
 
-- The free tier Gemini API (AI Studio) supports audio via file upload — make sure audio files are under 20MB.
-- MongoDB runs locally — data persists across sessions.
-- The `streamlit-mic-recorder` package enables in-browser microphone recording.
+- **Secure Contexts**: Web browsers require HTTPS (or `localhost` / `127.0.0.1`) to trigger webcam and microphone permission prompts.
+- **Reload Restoration**: Persists progress securely via the `db.active_exams` collection in MongoDB.
+- **Module Caching**: Automatically calls `importlib.reload` on helper pages on every Streamlit rerun to ensure modifications register without restarting the server.
