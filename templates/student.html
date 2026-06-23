@@ -1,0 +1,436 @@
+{% extends 'base.html' %}
+
+{% block title %}Student Dashboard - EduPortal AI{% endblock %}
+
+{% block content %}
+<!-- Standard Lobby View -->
+<div id="student-lobby" style="display: {% if session.get('test_active') %}none{% else %}block{% endif %};">
+    <div style="margin-bottom: 2rem;">
+        <h1 style="font-size: 2rem; margin-bottom: 0.25rem;">👋 Welcome, {{ session['user']['name'] }}</h1>
+        <p style="margin-bottom: 0;">Start your exam or review your past evaluations.</p>
+    </div>
+
+    <div class="tab-container">
+        <ul class="tab-headers">
+            <li class="tab-header active" data-tab="lobby-test-room">
+                <i class="fa-solid fa-laptop-code"></i> Test Room
+            </li>
+            <li class="tab-header" data-tab="lobby-results" id="tab-header-results">
+                <i class="fa-solid fa-chart-bar"></i> Results History
+            </li>
+        </ul>
+
+        <!-- TAB: Test Room (Lobby) -->
+        <div class="tab-content active" id="lobby-test-room">
+            <div style="max-width: 750px; margin: 0 auto;">
+                <div class="glass-card" style="background: rgba(99, 102, 241, 0.05); border-color: rgba(99, 102, 241, 0.2); padding: 2rem;">
+                    <h2 style="font-size: 1.5rem; margin-top: 0; color: #ffffff; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-circle-check" style="color: var(--primary);"></i> Salesforce Competency Assessment
+                    </h2>
+                    <p style="color: var(--text-muted); margin-top: 0.75rem; line-height: 1.6;">
+                        Welcome to the evaluation portal. Please complete the candidate registration form below to unlock and start the assessment.
+                    </p>
+                    <ul style="color: var(--text-muted); line-height: 1.8; margin-left: 1.5rem; margin-top: 0.75rem;">
+                        <li><strong>Exam Mode:</strong> Combined Salesforce MCQ & Open-Response.</li>
+                        <li><strong>Question Navigation:</strong> One question per page. You can navigate back and forth.</li>
+                        <li><strong>Response Methods:</strong> Written text, live webcam snapshots, and voice recording uploads.</li>
+                        <li><strong>AI Grading:</strong> Evaluated instantly by Google Gemini AI upon final submission.</li>
+                    </ul>
+                </div>
+
+                <h3 style="font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1rem;">👤 Candidate Details Registration</h3>
+                <div class="glass-card">
+                    <form id="start-exam-form">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                            <div class="form-group">
+                                <label for="c-student-id">Student / Candidate ID</label>
+                                <input type="text" id="c-student-id" name="student_id" class="form-control" placeholder="e.g. SID-100452" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="c-email">Email Address</label>
+                                <input type="email" id="c-email" name="student_email" class="form-control" placeholder="student@example.com" required>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1.75rem;">
+                            <label for="c-name">Full Name</label>
+                            <input type="text" id="c-name" name="student_name" class="form-control" value="{{ session['user']['name'] }}" required>
+                        </div>
+                        
+                        <div id="lobby-questions-info" style="margin-bottom: 1.5rem;">
+                            <!-- Dynamically loaded questions count -->
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block" id="start-exam-btn">
+                            <i class="fa-solid fa-play"></i> Start Assessment
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: Results History -->
+        <div class="tab-content" id="lobby-results">
+            <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Your Past Evaluations</h2>
+            
+            <div id="results-loading-spinner" class="spinner-wrapper">
+                <div class="spinner"></div>
+                <p>Loading results...</p>
+            </div>
+            
+            <div class="list-container" id="results-list" style="display: none;">
+                <!-- Filled dynamically via JS -->
+            </div>
+
+            <div class="alert alert-info" id="no-results-alert" style="display: none;">
+                <i class="fa-solid fa-info"></i>
+                <span>You haven't submitted any assessments yet.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Exam View (Hides Sidebar & Top Headers) -->
+<div id="student-exam" style="display: {% if session.get('test_active') %}block{% else %}none{% endif %};">
+    
+    <!-- PHASE 1: Hardware check -->
+    <div id="exam-hw-check" style="display: none; max-width: 900px; margin: 0 auto; padding-top: 1.5rem;">
+        <div class="glass-card" style="padding: 2rem;">
+            <h2 style="font-size: 1.75rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem;">
+                <i class="fa-solid fa-screwdriver-wrench" style="color: var(--primary);"></i> Hardware & Permission Verification
+            </h2>
+            <p style="margin-bottom: 1.5rem;">
+                Before starting the exam, we need to verify your webcam and microphone hardware. Please click 'Allow' if browser permissions are requested.
+            </p>
+            
+            <div class="alert alert-info">
+                <i class="fa-solid fa-user-check"></i>
+                <span id="registered-candidate-label">Candidate: <strong>@username</strong></span>
+            </div>
+            
+            <div class="hw-check-grid">
+                <!-- Webcam Check Box -->
+                <div class="hw-box">
+                    <h3><i class="fa-solid fa-camera"></i> 1. Webcam Check</h3>
+                    <div class="media-container" id="webcam-test-container">
+                        <video id="webcam-test-video" autoplay playsinline></video>
+                        <div class="captured-preview" id="webcam-test-preview">
+                            <img id="webcam-test-img" src="" alt="Snapshot Preview">
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-capture-webcam-test">
+                        <i class="fa-solid fa-camera-retro"></i> Capture Snapshot
+                    </button>
+                    <div id="webcam-test-status" class="alert alert-warning" style="margin: 0.5rem 0 0 0; padding: 0.5rem 1rem; width: 100%;">
+                        Webcam: Pending snapshot
+                    </div>
+                </div>
+
+                <!-- Mic Check Box -->
+                <div class="hw-box">
+                    <h3><i class="fa-solid fa-microphone"></i> 2. Microphone Check</h3>
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 160px; width: 100%;">
+                        <div id="mic-animation-container" style="display:none; flex-direction:column; align-items:center; gap:0.5rem; margin-bottom:1rem;">
+                            <span class="mic-pulse"></span>
+                            <span style="font-size:0.8rem; color:var(--danger); font-weight:600;">RECORDING CHECK CLIP</span>
+                        </div>
+                        <i class="fa-solid fa-microphone-lines" style="font-size: 3rem; color: var(--text-dim); margin-bottom: 1rem;" id="mic-icon-large"></i>
+                        <audio id="mic-test-playback" controls style="width: 100%; max-width: 240px; display: none; margin-bottom: 0.5rem;"></audio>
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-record-mic-test">
+                            <i class="fa-solid fa-circle"></i> Record 3s
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-play-mic-test" style="display: none;">
+                            <i class="fa-solid fa-play"></i> Play
+                        </button>
+                    </div>
+                    <div id="mic-test-status" class="alert alert-warning" style="margin: 0.5rem 0 0 0; padding: 0.5rem 1rem; width: 100%;">
+                        Microphone: Pending check
+                    </div>
+                </div>
+            </div>
+
+            <div style="border-top:1px solid var(--glass-border); padding-top:1.5rem; margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                <button type="button" class="btn btn-secondary" id="btn-hw-cancel">
+                    <i class="fa-solid fa-arrow-left"></i> Cancel & Lobby
+                </button>
+                <button type="button" class="btn btn-primary" id="btn-hw-proceed" disabled>
+                    <i class="fa-solid fa-chevron-right"></i> Proceed to Exam Questions
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PHASE 2: Active Question Sheet -->
+    <div id="exam-questions-sheet" style="display: none; padding-top: 1rem;">
+        
+        <!-- Header status panel -->
+        <div class="exam-layout-header">
+            <div>
+                <h2 id="exam-question-number" style="font-size:1.5rem;">Question 1 of 10</h2>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <span id="exam-timer-span" class="badge" style="background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border); font-size: 1rem; padding: 6px 12px; font-family:'JetBrains Mono', monospace; font-weight:600; color: #ffffff;">
+                    Time: 60:00
+                </span>
+                <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); font-size: 0.85rem;">
+                    🔴 Secure proctoring active
+                </span>
+            </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="progress-bar-wrapper">
+            <div class="progress-bar-fill" id="exam-progress-bar-fill"></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 3fr 2fr; gap: 2rem;" id="question-card-grid">
+            <!-- Question text, choices or open answers -->
+            <div>
+                <div class="glass-card" style="margin-bottom: 1.5rem;">
+                    <h2 id="q-active-title" style="font-size: 1.35rem; margin-bottom: 0.5rem; color: #ffffff;">Question Title</h2>
+                    <div style="display: flex; gap: 0.75rem; margin-bottom: 1.25rem;">
+                        <span class="badge badge-medium" id="q-active-difficulty">Medium</span>
+                        <span class="badge" style="background: rgba(255,255,255,0.05); color:#ffffff; border:1px solid rgba(255,255,255,0.1);" id="q-active-marks">10 Marks</span>
+                        <span class="badge" style="background: rgba(255,255,255,0.05); color:#ffffff; border:1px solid rgba(255,255,255,0.1);" id="q-active-type">Code Problem</span>
+                    </div>
+                    
+                    <p class="question-text-box" id="q-active-text" style="color: #ffffff; font-size:1.05rem;">Question text goes here...</p>
+                    
+                    <!-- Diagram Image placeholder -->
+                    <div id="q-active-image-container" style="display: none;">
+                        <img id="q-active-image" class="question-image-attachment" src="" alt="Question Diagram">
+                    </div>
+                </div>
+
+                <h3 style="font-size: 1.15rem; margin-bottom: 1rem;">✍️ Your Submission Response</h3>
+                
+                <!-- MCQ Single & Multiple selections -->
+                <div id="exam-mcq-response-box" style="display: none;">
+                    <div class="mcq-choice-list" id="exam-mcq-choices-container">
+                        <!-- Loaded dynamically via JS -->
+                    </div>
+                </div>
+
+                <!-- Open Answer Tabs -->
+                <div id="exam-open-response-box" style="display: none;">
+                    <div class="tab-container" style="margin-bottom: 1.5rem;">
+                        <ul class="tab-headers" id="exam-answer-tab-headers" style="margin-bottom: 1rem;">
+                            <li class="tab-header active" data-tab="ans-tab-text" id="header-ans-tab-text">
+                                <i class="fa-solid fa-keyboard"></i> Written Answer
+                            </li>
+                            <li class="tab-header" data-tab="ans-tab-image" id="header-ans-tab-image">
+                                <i class="fa-solid fa-camera"></i> Webcam & Photo
+                            </li>
+                            <li class="tab-header" data-tab="ans-tab-audio" id="header-ans-tab-audio">
+                                <i class="fa-solid fa-microphone"></i> Voice/Audio
+                            </li>
+                        </ul>
+                        
+                        <!-- Open Answer Tab: Text -->
+                        <div class="tab-content active" id="ans-tab-text">
+                            <div class="form-group">
+                                <label for="exam-text-textarea">Type your answer below:</label>
+                                <textarea id="exam-text-textarea" class="form-control" rows="12" style="font-size:1rem; line-height:1.6;" placeholder="Enter your detailed solution here..."></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Open Answer Tab: Image -->
+                        <div class="tab-content" id="ans-tab-image">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                <!-- Live camera capture -->
+                                <div class="hw-box" style="padding: 1rem;">
+                                    <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i class="fa-solid fa-video"></i> Capture via Webcam</h4>
+                                    <div class="media-container" id="exam-camera-stream-container" style="max-height:180px;">
+                                        <video id="exam-camera-video" autoplay playsinline></video>
+                                        <div class="captured-preview" id="exam-camera-preview">
+                                            <img id="exam-camera-img" src="" alt="Snapshot Preview">
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="margin-top:0.5rem;" id="btn-exam-camera-capture">
+                                        <i class="fa-solid fa-camera-retro"></i> Capture Answer
+                                    </button>
+                                </div>
+
+                                <!-- File Upload or QR code helper -->
+                                <div class="hw-box" style="padding: 1rem; justify-content: flex-start; text-align: left; align-items: flex-start;">
+                                    <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i class="fa-solid fa-file-image"></i> Upload Answer File</h4>
+                                    <input type="file" id="exam-image-file-input" class="form-control" accept="image/*" style="padding: 0.4rem; font-size: 0.85rem; margin-bottom: 1rem;">
+                                    
+                                    <div style="width: 100%; border-top:1px solid var(--glass-border); padding-top:0.75rem;">
+                                        <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i class="fa-solid fa-mobile-screen-button"></i> Scan Companion App</h4>
+                                        <button type="button" class="btn btn-secondary btn-sm btn-block" id="btn-toggle-qr">
+                                            <i class="fa-solid fa-qrcode"></i> Scan QR Code
+                                        </button>
+                                        
+                                        <!-- QR companion drawer -->
+                                        <div id="exam-qr-drawer" style="display:none; margin-top:0.75rem; text-align:center;">
+                                            <div style="display:flex; justify-content:center; margin-bottom:0.5rem;">
+                                                <canvas id="qr-companion-canvas" class="qr-code-element"></canvas>
+                                            </div>
+                                            <span style="font-size:0.8rem; color:var(--text-muted);" id="qr-companion-status">
+                                                Scanning... Waiting for mobile photo
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Display currently selected image file -->
+                            <div id="exam-active-image-preview-banner" class="alert alert-success" style="margin-top: 1rem; display: none;">
+                                <i class="fa-solid fa-image"></i>
+                                <span>Image answer successfully saved! Click tab to view preview or capture again.</span>
+                            </div>
+                        </div>
+
+                        <!-- Open Answer Tab: Audio -->
+                        <div class="tab-content" id="ans-tab-audio">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                <!-- Live microphone recorder -->
+                                <div class="hw-box" style="padding: 1.25rem;">
+                                    <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i class="fa-solid fa-microphone"></i> Record Spoken Answer</h4>
+                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 100px; width: 100%;">
+                                        <div id="exam-mic-pulse" style="display:none; flex-direction:column; align-items:center; gap:0.25rem; margin-bottom:0.5rem;">
+                                            <span class="mic-pulse"></span>
+                                            <span style="font-size:0.75rem; color:var(--danger); font-weight:600;">RECORDING AUDIO</span>
+                                        </div>
+                                        <i class="fa-solid fa-microphone-lines" style="font-size: 2.5rem; color: var(--text-dim);" id="exam-mic-icon"></i>
+                                        <audio id="exam-audio-playback" controls style="width: 100%; max-width: 220px; display: none; margin-top: 0.5rem;"></audio>
+                                    </div>
+                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="btn-exam-audio-record">
+                                            <i class="fa-solid fa-circle"></i> Record Audio
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm" id="btn-exam-audio-stop" style="display: none;">
+                                            <i class="fa-solid fa-stop"></i> Stop
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Audio File Upload -->
+                                <div class="hw-box" style="padding: 1.25rem; justify-content: flex-start; text-align: left; align-items: flex-start;">
+                                    <h4 style="font-size:0.95rem; margin-bottom:0.5rem;"><i class="fa-solid fa-file-audio"></i> Upload Audio File</h4>
+                                    <input type="file" id="exam-audio-file-input" class="form-control" accept="audio/*" style="padding: 0.4rem; font-size: 0.85rem;">
+                                    <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.5rem;">Accepted formats: .mp3, .wav, .m4a, .ogg</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Display currently selected audio file -->
+                            <div id="exam-active-audio-preview-banner" class="alert alert-success" style="margin-top: 1rem; display: none;">
+                                <i class="fa-solid fa-microphone"></i>
+                                <span>Voice answer successfully saved! Click tab to view preview or record again.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Navigation Row -->
+                <div class="exam-controls">
+                    <button type="button" class="btn btn-secondary" id="btn-exam-prev" style="visibility: hidden;">
+                        <i class="fa-solid fa-arrow-left"></i> Previous Question
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btn-exam-next">
+                        Next Question <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                    <button type="button" class="btn btn-danger" id="btn-exam-submit" style="display: none;">
+                        <i class="fa-solid fa-circle-check"></i> Submit Assessment
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sidebar list of question numbers -->
+            <div>
+                <div class="glass-card" style="position: sticky; top: 1.5rem;">
+                    <h3 style="font-size: 1.15rem; margin-bottom: 1rem; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:0.5rem;">
+                        📋 Questions Map
+                    </h3>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;" id="exam-questions-grid-map">
+                        <!-- Dynamic items via JS -->
+                    </div>
+                    
+                    <div style="margin-top: 2rem; border-top:1px solid rgba(255,255,255,0.05); padding-top:1rem; font-size: 0.8rem; color: var(--text-muted);">
+                        <strong>Color Key:</strong>
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem;">
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span style="display:inline-block; width:12px; height:12px; border-radius:3px; background:linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);"></span>
+                                <span>Current Active</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span style="display:inline-block; width:12px; height:12px; border-radius:3px; background:rgba(16,185,129,0.25); border:1px solid var(--success);"></span>
+                                <span>Answered</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span style="display:inline-block; width:12px; height:12px; border-radius:3px; background:var(--glass-bg); border:1px solid var(--glass-border);"></span>
+                                <span>Unanswered</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Evaluation loading blocker modal -->
+<div class="modal-overlay" id="grading-modal-overlay">
+    <div class="modal-container">
+        <div class="spinner-wrapper" style="padding: 1.5rem 0;">
+            <div class="spinner" style="border-top-color: var(--secondary); width:60px; height:60px;"></div>
+            <h2 style="font-size:1.5rem; text-align:center;">Gemini AI Assessment Grading</h2>
+            <p style="text-align:center; max-width: 400px; margin-bottom: 0;" id="grading-status-label">
+                Evaluating Question 1 of 5: Master-Detail vs Lookup... Please do not close or refresh this tab.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Evaluation summary report sheet -->
+<div id="student-summary-report" style="display: none; max-width: 900px; margin: 0 auto; padding-top: 1rem;">
+    <div class="glass-card" style="background: rgba(16, 185, 129, 0.04); border-color: rgba(16, 185, 129, 0.15);">
+        <h1 style="font-size: 2rem; color: var(--success); display: flex; align-items: center; gap: 0.75rem;">
+            <i class="fa-solid fa-trophy"></i> Assessment Submission Complete!
+        </h1>
+        <p style="margin-top: 0.5rem;">Your responses have been graded and evaluated by Google Gemini AI.</p>
+        
+        <div class="alert alert-info" style="margin-top:1.25rem; display: flex; flex-direction:column; gap:0.25rem;">
+            <span id="summary-candidate-label">Candidate Name: <strong>Samyak</strong> | ID: <strong>SID-100452</strong></span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;" id="summary-metrics-grid">
+            <div class="glass-card stat-card" style="margin-bottom:0; background:rgba(0,0,0,0.25);">
+                <div class="stat-icon" style="color:var(--primary); background:rgba(99,102,241,0.08); border-color:rgba(99,102,241,0.15);"><i class="fa-solid fa-square-check"></i></div>
+                <div class="stat-info">
+                    <span class="stat-value" id="summary-mcq-score">0 / 0</span>
+                    <span class="stat-label">MCQ Auto Score</span>
+                </div>
+            </div>
+            <div class="glass-card stat-card" style="margin-bottom:0; background:rgba(0,0,0,0.25);">
+                <div class="stat-icon" style="color:var(--secondary); background:rgba(168,85,247,0.08); border-color:rgba(168,85,247,0.15);"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <div class="stat-info">
+                    <span class="stat-value" id="summary-open-score">0 / 0</span>
+                    <span class="stat-label">AI Evaluated Score</span>
+                </div>
+            </div>
+        </div>
+
+        <h2 style="font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:0.5rem;">
+            📝 Detailed Question-by-Question AI Grading
+        </h2>
+        
+        <div class="list-container" id="summary-reports-accordion">
+            <!-- Accordion cards added dynamically via JS -->
+        </div>
+
+        <button type="button" class="btn btn-primary btn-block" style="margin-top: 2rem;" id="btn-close-summary">
+            Close Report & Back to Dashboard
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/student.js') }}"></script>
+<script src="{{ url_for('static', filename='js/exam.js') }}"></script>
+{% endblock %}

@@ -2,7 +2,9 @@ import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import bcrypt
-from datetime import datetime,timezone
+from datetime import datetime, timezone, timedelta
+import uuid
+import random
 
 load_dotenv()
 
@@ -10,12 +12,37 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB = os.getenv("MONGO_DB", "portal_db")
 
 _client = None
+_indexes_created = False
 
 def get_db():
-    global _client
+    global _client, _indexes_created
     if _client is None:
         _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    return _client[MONGO_DB]
+        
+    db = _client[MONGO_DB]
+    
+    # Connection ping check
+    try:
+        db.command("ping")
+    except Exception:
+        # Retry once by recreating client
+        _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        db = _client[MONGO_DB]
+        db.command("ping") # If this fails, let the exception propagate
+        
+    if not _indexes_created:
+        try:
+            # Ensure indexes for fast lookups and security token validation
+            db.exam_sessions.create_index("token", unique=True)
+            db.upload_tokens.create_index("token", unique=True)
+            # TTL Index to auto-expire upload tokens after their expires_at time
+            db.upload_tokens.create_index("expires_at", expireAfterSeconds=0)
+            db.otp_codes.create_index("expires_at", expireAfterSeconds=0)
+            _indexes_created = True
+        except Exception:
+            pass # Index creation failure shouldn't crash the entire app if DB is otherwise fine
+            
+    return db
 
 
 # ── Users ──────────────────────────────────────────────────────────────────
@@ -142,3 +169,158 @@ def get_active_exam_state(username: str):
 def delete_active_exam_state(username: str):
     db = get_db()
     db.active_exams.delete_one({"username": username})
+
+
+# ── Lockdown Browser Helpers ────────────────────────────────────────────────
+
+def create_exam_session(username: str, question_ids: list, duration_minutes: int = 60) -> str:
+    db = get_db()
+    token = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=duration_minutes)
+    
+    db.exam_sessions.insert_one({
+        "token": token,
+        "student_username": username,
+        "question_ids": question_ids,
+        "started_at": now,
+        "expires_at": expires_at,
+        "status": "active",
+        "violations": [],
+        "last_heartbeat": now
+    })
+    return token
+
+def verify_exam_token(token: str):
+    db = get_db()
+    session = db.exam_sessions.find_one({"token": token, "status": "active"})
+    if not session:
+        return None
+    
+    # Check if expired
+    now = datetime.now(timezone.utc)
+    expires_at = session["expires_at"]
+    # Handle both offset-aware and offset-naive from pymongo
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+    if expires_at < now:
+        db.exam_sessions.update_one({"token": token}, {"$set": {"status": "expired"}})
+        return None
+        
+    return session
+
+def heartbeat_session(token: str) -> bool:
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    result = db.exam_sessions.update_one(
+        {"token": token, "status": "active"},
+        {"$set": {"last_heartbeat": now}}
+    )
+    return result.modified_count > 0
+
+def log_violation(token: str, violation_type: str, detail: str) -> bool:
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    violation = {
+        "type": violation_type,
+        "detail": detail,
+        "timestamp": now
+    }
+    result = db.exam_sessions.update_one(
+        {"token": token},
+        {"$push": {"violations": violation}}
+    )
+    return result.modified_count > 0
+
+def create_upload_token(student_username: str, question_id: str) -> str:
+    db = get_db()
+    token = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=5)
+    
+    db.upload_tokens.insert_one({
+        "token": token,
+        "student_username": student_username,
+        "question_id": question_id,
+        "expires_at": expires_at,
+        "used": False,
+        "image_bytes": None
+    })
+    return token
+
+def verify_upload_token(token: str):
+    db = get_db()
+    token_doc = db.upload_tokens.find_one({"token": token, "used": False})
+    if not token_doc:
+        return None
+        
+    now = datetime.now(timezone.utc)
+    expires_at = token_doc["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+    if expires_at < now:
+        return None
+        
+    return token_doc
+
+def save_token_image(token: str, image_bytes: bytes) -> bool:
+    db = get_db()
+    result = db.upload_tokens.update_one(
+        {"token": token, "used": False},
+        {"$set": {"image_bytes": image_bytes, "used": True}}
+    )
+    return result.modified_count > 0
+
+def check_token_status(token: str) -> dict:
+    db = get_db()
+    token_doc = db.upload_tokens.find_one({"token": token})
+    if not token_doc:
+        return {"uploaded": False, "image_bytes": None}
+    return {
+        "uploaded": token_doc.get("used", False),
+        "image_bytes": token_doc.get("image_bytes")
+    }
+
+def generate_login_otp(username: str)->str:
+    db = get_db()
+    code = f"{random.randint(100000,999999)}"
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=5)
+
+    db.otp_codes.insert_one({
+        "username": username,
+        "code": code,
+        "created_at": now,
+        "expires_at": expires_at,
+        "used": False
+    })
+
+    print(f"[Simulated OTP] Code for @{username}: {code}")
+
+    return code
+
+def verify_login_otp(username: str, code: str) -> bool:
+    db=get_db()
+    now = datetime.now(timezone.utc)
+
+    otp_doc = db.otp_codes.find_one({
+        "username": username,
+        "code": code.strip(),
+        "used": False
+    })
+
+    if not otp_doc:
+        return False
+    
+    expires_at = otp_doc["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < now:
+        return False
+
+    db.otp_codes.update_one({"_id": otp_doc["_id"]}, {"$set": {"used": True}})
+    return True

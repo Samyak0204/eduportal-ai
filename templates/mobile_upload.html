@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Answer Photo Upload - EduPortal AI</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Mobile optimized styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            min-height: 100vh;
+        }
+        .mobile-wrapper {
+            width: 100%;
+            max-width: 440px;
+        }
+        .photo-capture-box {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px dashed var(--glass-border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            cursor: pointer;
+            overflow: hidden;
+            position: relative;
+            transition: border-color var(--transition-speed);
+        }
+        .photo-capture-box:hover {
+            border-color: var(--primary);
+        }
+        .photo-capture-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-wrapper">
+        <div class="glass-card mobile-card">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <i class="fa-solid fa-mobile-screen-button" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 0.5rem;"></i>
+                <h1 style="font-size: 1.6rem; font-family: var(--font-header);">Answer Photo Upload</h1>
+                <p style="font-size: 0.9rem; color: var(--text-muted);">EduPortal AI Scan Companion</p>
+            </div>
+
+            <!-- Error state if token is invalid/expired -->
+            {% if error %}
+            <div class="alert alert-danger" style="margin-bottom: 0;">
+                <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.5rem;"></i>
+                <div>
+                    <strong>Link Invalid or Expired</strong><br>
+                    <span style="font-size:0.85rem;">{{ error }}</span>
+                </div>
+            </div>
+            {% else %}
+            
+            <div class="alert alert-info">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>Candidate: <strong>@{{ student_username }}</strong></span>
+            </div>
+
+            <div class="photo-capture-box" id="capture-container">
+                <div id="capture-prompt" style="text-align: center; padding: 1.5rem;">
+                    <i class="fa-solid fa-camera-retro" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
+                    <p style="margin-bottom: 0; font-size: 0.95rem; font-weight: 500; color: #ffffff;">Tap here to open camera</p>
+                    <span style="font-size: 0.8rem; color: var(--text-dim);">Capture your written answer sheet</span>
+                </div>
+                <img id="capture-preview" src="#" alt="Captured answer sheet preview">
+            </div>
+
+            <form id="mobile-upload-form">
+                <!-- Hidden inputs -->
+                <input type="hidden" id="upload-token" name="token" value="{{ token }}">
+                <!-- Native Camera Input (Forces Rear camera) -->
+                <input type="file" id="mobile-camera-input" accept="image/*" capture="environment" style="display: none;">
+                
+                <button type="button" class="btn btn-secondary btn-block" style="margin-bottom: 0.75rem;" id="btn-retake" style="display: none;">
+                    <i class="fa-solid fa-rotate-right"></i> Take Another Photo
+                </button>
+                <button type="submit" class="btn btn-primary btn-block" id="btn-submit-upload" disabled>
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Upload & Submit Photo
+                </button>
+            </form>
+
+            <div class="alert alert-success" id="upload-success-alert" style="margin-top: 1.5rem; display: none;">
+                <i class="fa-solid fa-circle-check" style="font-size: 1.5rem;"></i>
+                <div>
+                    <strong>Upload Complete!</strong><br>
+                    <span style="font-size:0.85rem;">You can now close this browser tab. Your exam screen on your computer will update automatically.</span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not error %}
+    <script src="{{ url_for('static', filename='js/mobile_upload.js') }}"></script>
+    {% endif %}
+</body>
+</html>

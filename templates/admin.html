@@ -1,0 +1,339 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard - EduPortal AI{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 style="font-size: 2rem; margin-bottom: 0.25rem;">👋 Welcome, {{ session['user']['name'] }}</h1>
+            <p style="margin-bottom: 0;">Manage your assessment portal and review AI student evaluations here.</p>
+        </div>
+        <a href="{{ url_for('logout') }}" class="btn btn-secondary" style="display: none;" id="mobile-logout">
+            <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+        </a>
+    </div>
+
+    <!-- Metrics Cards Grid -->
+    <div class="stats-grid">
+        <div class="glass-card stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-clipboard-question"></i></div>
+            <div class="stat-info">
+                <span class="stat-value" id="metric-questions">0</span>
+                <span class="stat-label">Total Questions</span>
+            </div>
+        </div>
+        <div class="glass-card stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-inbox"></i></div>
+            <div class="stat-info">
+                <span class="stat-value" id="metric-submissions">0</span>
+                <span class="stat-label">Total Submissions</span>
+            </div>
+        </div>
+        <div class="glass-card stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-user-graduate"></i></div>
+            <div class="stat-info">
+                <span class="stat-value" id="metric-students">0</span>
+                <span class="stat-label">Total Students</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs Container -->
+    <div class="tab-container">
+        <ul class="tab-headers">
+            <li class="tab-header active" data-tab="tab-upload">
+                <i class="fa-solid fa-plus"></i> Upload Question
+            </li>
+            <li class="tab-header" data-tab="tab-manage" id="tab-header-manage">
+                <i class="fa-solid fa-list-check"></i> Manage Questions
+            </li>
+            <li class="tab-header" data-tab="tab-submissions" id="tab-header-submissions">
+                <i class="fa-solid fa-square-poll-vertical"></i> View Submissions
+            </li>
+            <li class="tab-header" data-tab="tab-students" id="tab-header-students">
+                <i class="fa-solid fa-users"></i> Manage Students
+            </li>
+        </ul>
+
+        <!-- TAB: Upload Question -->
+        <div class="tab-content active" id="tab-upload">
+            <h2 style="font-size: 1.5rem; margin-bottom: 1rem;" id="form-heading">Upload a New Question</h2>
+            
+            <div class="template-drawer">
+                <h3 style="font-size: 1rem; margin-bottom: 0.5rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;" id="toggle-templates">
+                    <i class="fa-solid fa-lightbulb" style="color: var(--warning);"></i> 
+                    <span>Salesforce Question Templates (Click to view/load)</span>
+                    <i class="fa-solid fa-chevron-down" style="margin-left: auto; font-size: 0.8rem;"></i>
+                </h3>
+                <div class="template-list" style="display: none; margin-top: 1rem; max-height: 350px; overflow-y: auto; padding-right: 0.5rem;" id="templates-list-container">
+                    <!-- Loaded dynamically via Javascript from salesforce_questions -->
+                </div>
+            </div>
+
+            <div class="alert alert-warning" id="edit-mode-alert" style="display: none;">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>You are currently in <strong>Edit Mode</strong>. Submitting this form will modify the selected question.</span>
+            </div>
+
+            <form id="question-form" enctype="multipart/form-data">
+                <input type="hidden" id="edit-qid" name="edit-qid">
+                
+                <div class="form-group">
+                    <label for="q-type">Question Type</label>
+                    <select id="q-type" name="type" class="form-control">
+                        <option value="Multiple Choice">Multiple Choice</option>
+                        <option value="Free Text / Essay">Free Text / Essay</option>
+                        <option value="Math / Equations">Math / Equations</option>
+                        <option value="Code Problem">Code Problem</option>
+                        <option value="Image-Based">Image-Based</option>
+                    </select>
+                </div>
+
+                <div class="alert alert-info" id="q-type-tip" style="display: none;">
+                    <!-- Contextual help content written by JS -->
+                </div>
+
+                <div class="form-group" id="mcq-multi-correct-group" style="display: block;">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="q-is-multi-correct" name="is_multi_correct">
+                        <label for="q-is-multi-correct" style="margin-bottom: 0; cursor: pointer;">Allow Multiple Correct Answers (Multi-Select)</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="q-title">Question Title / Label</label>
+                    <input type="text" id="q-title" name="title" class="form-control" placeholder="e.g. Q1 - Python Basics" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="q-text">Question Text</label>
+                    <textarea id="q-text" name="text" class="form-control" rows="5" placeholder="Enter the full question here..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="q-image">Question Image Diagram (Optional)</label>
+                    <div id="q-current-image-preview" style="margin-bottom: 0.5rem; display: none;">
+                        <span class="badge badge-medium">Current Image Saved</span>
+                    </div>
+                    <input type="file" id="q-image" name="image_file" class="form-control" accept="image/*">
+                </div>
+
+                <!-- MCQ Options Section -->
+                <div id="mcq-options-container" style="display: block; border-left: 3px solid var(--primary); padding-left: 1.25rem; margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">MCQ Choices & Answer Key</h3>
+                    
+                    <div class="form-group">
+                        <label for="q-opt-a">Option A</label>
+                        <input type="text" id="q-opt-a" name="opt_a" class="form-control" placeholder="Answer option A">
+                    </div>
+                    <div class="form-group">
+                        <label for="q-opt-b">Option B</label>
+                        <input type="text" id="q-opt-b" name="opt_b" class="form-control" placeholder="Answer option B">
+                    </div>
+                    <div class="form-group">
+                        <label for="q-opt-c">Option C</label>
+                        <input type="text" id="q-opt-c" name="opt_c" class="form-control" placeholder="Answer option C">
+                    </div>
+                    <div class="form-group">
+                        <label for="q-opt-d">Option D</label>
+                        <input type="text" id="q-opt-d" name="opt_d" class="form-control" placeholder="Answer option D">
+                    </div>
+
+                    <!-- Single Answer MCQ Selection -->
+                    <div class="form-group" id="mcq-single-correct-select">
+                        <label for="q-correct-single">Correct Answer Choice</label>
+                        <select id="q-correct-single" class="form-control">
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="D">D</option>
+                        </select>
+                    </div>
+
+                    <!-- Multi Answer MCQ Selection -->
+                    <div class="form-group" id="mcq-multi-correct-select" style="display: none;">
+                        <label>Correct Answer Choices (Select all that apply)</label>
+                        <div class="checkbox-group">
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-correct-cb-a" value="A" class="mcq-correct-cb">
+                                <label for="q-correct-cb-a" style="margin-bottom:0; cursor:pointer;">A</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-correct-cb-b" value="B" class="mcq-correct-cb">
+                                <label for="q-correct-cb-b" style="margin-bottom:0; cursor:pointer;">B</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-correct-cb-c" value="C" class="mcq-correct-cb">
+                                <label for="q-correct-cb-c" style="margin-bottom:0; cursor:pointer;">C</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-correct-cb-d" value="D" class="mcq-correct-cb">
+                                <label for="q-correct-cb-d" style="margin-bottom:0; cursor:pointer;">D</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Non-MCQ Fields -->
+                <div id="open-question-container" style="display: none; border-left: 3px solid var(--secondary); padding-left: 1.25rem; margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Open Response Details</h3>
+                    
+                    <div class="form-group">
+                        <label for="q-ideal-answer">Ideal Correct Answer / Solution / Grading Rubric (Optional)</label>
+                        <textarea id="q-ideal-answer" name="ideal_answer" class="form-control" rows="4" placeholder="Provide details to help Gemini grade accurately..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Accepted Student Answer Formats</label>
+                        <div class="checkbox-group">
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-allow-format-text" name="allow_text" checked>
+                                <label for="q-allow-format-text" style="margin-bottom: 0; cursor: pointer;">Text Answer</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-allow-format-image" name="allow_image" checked>
+                                <label for="q-allow-format-image" style="margin-bottom: 0; cursor: pointer;">Image Answer (Upload / Camera)</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="q-allow-format-audio" name="allow_audio" checked>
+                                <label for="q-allow-format-audio" style="margin-bottom: 0; cursor: pointer;">Audio Answer (Upload / Recording)</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="q-explanation">Explanation / Rationale for Correct Answer (Optional)</label>
+                    <textarea id="q-explanation" name="explanation" class="form-control" rows="3" placeholder="Detailed explanation..."></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+                    <div class="form-group">
+                        <label for="q-marks">Marks</label>
+                        <input type="number" id="q-marks" name="marks" class="form-control" min="1" max="100" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label for="q-difficulty">Difficulty</label>
+                        <select id="q-difficulty" name="difficulty" class="form-control">
+                            <option value="Easy">Easy</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="Hard">Hard</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 3;" id="form-submit-btn">
+                        <i class="fa-solid fa-paper-plane"></i> Upload Question
+                    </button>
+                    <button type="button" class="btn btn-secondary" style="flex: 1; display: none;" id="form-cancel-btn">
+                        <i class="fa-solid fa-xmark"></i> Cancel Edit
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB: Manage Questions -->
+        <div class="tab-content" id="tab-manage">
+            <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">All Assessment Questions</h2>
+            
+            <div id="questions-loading-spinner" class="spinner-wrapper">
+                <div class="spinner"></div>
+                <p>Loading questions...</p>
+            </div>
+            
+            <div class="list-container" id="questions-list" style="display: none;">
+                <!-- Filled dynamically via JS -->
+            </div>
+            
+            <div class="alert alert-info" id="no-questions-alert" style="display: none;">
+                <i class="fa-solid fa-info"></i>
+                <span>No questions have been uploaded yet. Use the Upload tab to add some.</span>
+            </div>
+        </div>
+
+        <!-- TAB: View Submissions -->
+        <div class="tab-content" id="tab-submissions">
+            <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Student Assessment Submissions</h2>
+            
+            <div id="submissions-loading-spinner" class="spinner-wrapper">
+                <div class="spinner"></div>
+                <p>Loading submissions...</p>
+            </div>
+            
+            <div class="list-container" id="submissions-list" style="display: none;">
+                <!-- Filled dynamically via JS -->
+            </div>
+
+            <div class="alert alert-info" id="no-submissions-alert" style="display: none;">
+                <i class="fa-solid fa-info"></i>
+                <span>No student submissions found in the database.</span>
+            </div>
+        </div>
+
+        <!-- TAB: Manage Students -->
+        <div class="tab-content" id="tab-students">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem;">
+                <!-- Students Directory -->
+                <div>
+                    <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Registered Candidates</h2>
+                    
+                    <div id="students-loading-spinner" class="spinner-wrapper">
+                        <div class="spinner"></div>
+                        <p>Loading student directory...</p>
+                    </div>
+                    
+                    <div class="glass-card" style="padding: 0; overflow-x: auto; display: none;" id="students-table-card">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left;" id="students-table">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--glass-border); background: rgba(255,255,255,0.02);">
+                                    <th style="padding: 1rem;">Name</th>
+                                    <th style="padding: 1rem;">Username</th>
+                                    <th style="padding: 1rem;">Registered On</th>
+                                </tr>
+                            </thead>
+                            <tbody id="students-table-body">
+                                <!-- Filled dynamically via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="alert alert-info" id="no-students-alert" style="display: none;">
+                        <i class="fa-solid fa-info"></i>
+                        <span>No student accounts registered yet. Use the form on the right to create one.</span>
+                    </div>
+                </div>
+
+                <!-- Add Student Form -->
+                <div>
+                    <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Add Candidate</h2>
+                    <div class="glass-card">
+                        <form id="create-student-form">
+                            <div class="form-group">
+                                <label for="s-name">Full Name</label>
+                                <input type="text" id="s-name" name="name" class="form-control" placeholder="e.g. Samyak" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="s-username">Username</label>
+                                <input type="text" id="s-username" name="username" class="form-control" placeholder="e.g. student2" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <label for="s-password">Password</label>
+                                <input type="password" id="s-password" name="password" class="form-control" placeholder="Create a password" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">
+                                <i class="fa-solid fa-user-plus"></i> Create Student Account
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

@@ -89,6 +89,8 @@ dmypy.json
 .env
 .env.local
 .env.*
+!.env.example
+
 
 # Editor / IDE configuration files
 .vscode/

@@ -1,0 +1,124 @@
+EDUPORTAL AI
+Desktop Lockdown Browser & Secure Exam PortalTechnical Implementation Plan & Architecture Specification
+Version: 1.6 (Decoupled Login & Session Launch)Prepared for: Engineering Management & Project StakeholdersStatus: Final Draft for ReviewTarget Platforms: Windows 10/11 & macOS 13+
+1. Executive Summary
+EduPortal AI is an AI-powered student evaluation system utilizing Google Gemini (gemini-2.5-flash) and MongoDB. While the current prototype successfully supports multi-modal answer submissions (text, image, and voice), it operates in an open web environment without administrative proctoring controls or exam integrity limits.
+This technical implementation plan details a two-tier strategy to harden the existing setup into a robust, secure exam portal:
+Web Portal Upgrades: Restructuring session routing, database models, scoped exam views, webcam integration, and proctoring metrics dashboards.
+PyQt6 Desktop Lockdown App: A standalone desktop container that gates web portal access, suppresses operating system shortcuts, prevents display duplication, monitors focus states, and logs violation heartbeats.
+By deploying this architecture, the platform will enforce that exams are only accessible within the secure container, ensuring complete visual and session integrity while tracking proctoring telemetry in real time.
+2. Technical Modernization Strategy
+This table details the shift from the current open prototype codebase to the target secure architecture:
+Feature Area
+Current Behavior
+Target Implementation Plan
+Session Scope
+All questions are visible to any logged-in user with no time bounds.
+ExamSessions created with secure UUIDs. Questions are scoped by exam context with active timers. Access requires entering a valid Exam Key.
+Security Gate
+Access is open on standard web browsers. Session state resets on page refresh.
+Gated behind PyQt6 User-Agent validation, signed session token verification, and mandatory pre-exam security checks (process/display checks).
+Media Storage
+Raw image and audio binary blobs are stored inline inside MongoDB documents.
+GridFS integration. Files are stored in separate chunked collections, keeping the main database query speed optimal.
+API Billing & Quota
+Gemini AI evaluation triggers automatically upon student submission.
+AI evaluations shifted to an administrative trigger model. Evaluations run on-demand to prevent concurrent rate limits and manage cost.
+Biometrics & Proctoring
+No biometric identification, active tracking, or data-loss prevention.
+Enrolls face templates (Front, Left, Right profiles). Verifies identity before exam start via Gemini. Enforces background camera audits, moving dynamic watermarks, keystroke dynamics, clipboard sanitization, and offline SQLite caching.
+3. Target Architecture & End-to-End Flow
+The upgraded system operates through three primary layers: the Desktop Lockdown App (UI Container), the Web Portal (Business Logic & Proctoring API), and the Database (State Persistence).
+1. Biometric Enrollment: During administrator student registration, the system initiates a webcam wizard capturing three reference images (Front view, Left profile, Right profile). These templates are stored in GridFS and bound to the user record.
+2. Exam Initialization: The administrator creates an exam (assigning questions, duration) and defines a secure alphanumeric Exam Key (access code).
+3. Secure Launch: The user opens the desktop lockdown app in windowed mode and logs in. If they are an administrator, they remain in windowed mode. Students navigate to the instruction gateway.
+4. Exam Access Gate: The student selects an exam and inputs the required Exam Key. If valid, the portal unlocks the pre-exam verification phase.
+5. Security Prechecks: The PyQt6 client runs automated system checks (ensuring display count is exactly 1, no blacklisted apps are running, and accessibility hooks are available).
+6. Identity Verification: The student takes a live snapshot via the web portal's camera interface. The server transmits this snapshot and the student's enrolled face templates to the Gemini API, which executes biometric structural comparison and returns a Match/Mismatch verdict.
+7. Token Handshake: Upon key validation and biometric precheck approvals, the student clicks 'Start Exam'. The PyQt6 client triggers ?action=launch&exam_id=... to initialize the ExamSession UUID inside the database, returning the token to the client app.
+8. Lockdown Activation: Once the session token is received, the PyQt6 app immediately intercepts this state, enters frameless fullscreen mode, sets stays-on-top attributes, and activates key suppression hooks.
+9. Exam Execution: The page renders only questions assigned to this specific session, initiating a visual countdown timer. The screen displays a moving, transparent watermark of the student's details.
+10. Proctoring & Heartbeats: During the active exam, the PyQt6 container monitors system focus, screen count, and processes, forwarding any violations to the API while issuing a silent heartbeat request every 30 seconds. The PyQt6 app runs random background camera audits, clearing the system clipboard, and checking keystroke anomalies.
+11. Offline Caching: If internet connection drops, the PyQt6 client autosaves typed responses into an encrypted local SQLite database. Answers are synchronized to MongoDB once the heartbeat connection is restored.
+12. Exam Completion & Release: On exam end (timer or manual submit), the client exits fullscreen mode, releases keyboard and monitor hooks, returns the application to a normal windowed container, and gates further submission edits.
+13. Administrative AI Grading: The admin reviews proctoring logs and runs AI grading via the Gemini API on-demand.
+4. Component Specifications
+4.1 Database Enhancements (db.py)
+To support proctoring, key gating, and biometrics, collections are updated:
+users: Updated to store face profile references: face_templates (array of GridFS ObjectIDs matching enrolled Front, Left, and Right profiles).
+exams: Updated to store configuration data: question_ids, title, duration_minutes, created_by, is_active, and access_key (hashed alphanumeric passcode).
+exam_sessions: Tracks student sessions: token (UUID), started_at, expires_at, status, violations (array of logged alerts), last_heartbeat.
+GridFS is initialized using PyMongo's gridfs module. Binary file upload functions are refactored to write to GridFS first, saving the returned file ObjectIDs inside the submission document instead of storing inline BSON bytes. Database connection logic (get_db) is updated with ping commands to automatically verify host server connectivity and reconnect dynamically on failure.
+4.2 Web Portal Routing (app.py)
+Custom CSS is moved from the main application script into an independent styles.py module, exposing a clean stylesheet function to minimize code bloat. An API parameter router is added to the top of main() to parse query parameters before page layouts render:
+?action=launch&u=<username>&exam_id=<exam_id>: Initializes the database session for the specified exam after validation checks, outputting the token JSON payload.
+?action=heartbeat&token=<token>: Updates the session heartbeat timestamp. Used by the desktop app keep-alive timer.
+?action=violation&token=<token>&type=<type>: Logs proctoring violation alerts directly into the session document.
+?action=submit&token=<token>: Concludes the active exam session and locks the user interface.
+?page=upload&token=<token>: A public page bypassing standard auth gates, allowing mobile companion camera uploads.
+4.3 Student Dashboard Upgrades (student_pages.py)
+The student experience is updated to enforce exam integrity:
+Access Verification Gate: Checks that the incoming connection uses the PyQt6 User-Agent and possesses a valid token query parameter. Fails if standard browsers are used.
+Exam Key Validation Screen: Prompts the student to select their target exam and enter the Exam Key. Access is denied if the key does not match.
+Pre-Exam Biometric Verification Screen: Initiates the webcam via st.camera_input() and requires the student to capture a live face photo. This snapshot is compared against the enrolled profiles. Exam launch is blocked unless Gemini API issues a verified match confirmation.
+Dynamic Watermarking Overlay: Injects moving, semi-transparent text blocks containing the student's username, current local IP, and a rolling timestamp. Acts as a visual barrier preventing screen photography leaks.
+Keyboard Injection Monitor: A JavaScript hook logs the keystroke intervals (dwell and flight timings). If characters are entered at speeds exceeding human typing boundaries, the system logs a keystroke_injection violation.
+4.4 Proctoring Dashboard & Grading (admin_pages.py)
+The admin portal is equipped with oversight capabilities:
+Biometric Enrollment Wizard: Integrated into the Add Student form. Features a multi-step webcam capture sequence to register and store 3 distinct reference angles (Front, Left, Right) inside the user's database document.
+Live Proctoring Dashboard: A dedicated tab to track student status, display real-time violation logs (focus loss, process violations, double screen, camera audit flags, keyboard injection events), heartbeat timestamps, and a manual session termination button.
+AI Grading Management: Shifts AI analysis from submission time to administrative control. Each entry features a 'Trigger Gemini Evaluation' button to run grading on-demand.
+4.5 PyQt6 Desktop App Specifications (lockdown_browser.py)
+Built in PyQt6, this application acts as a secure container for the exam:
+Dynamic Window States: The application starts as a standard windowed window. Fullscreen proctoring and keyboard hooks are only engaged when the page URL indicates an exam has started (e.g. ?page=exam). This allows administrators to manage exams, and students to read instructions, without entering lockdown prematurely.
+Low-Level Keyboard Hook (Windows): Active only in lockdown mode. Uses a ctypes WH_KEYBOARD_LL hook to intercept and block system shortcuts (Windows key, Alt+Tab, Alt+Esc, Ctrl+Esc).
+Cocoa Presentation Controls (macOS): Active only in lockdown mode. Disables dock hiding, process switching, and the force-quit shortcut menu via native NSApplication overrides.
+Continuous Proctoring Monitors: Checks display count every 2 seconds. The Focus Monitor detects focus loss. The Process Monitor checks background processes against a whitelist every 10 seconds. Violations are instantly sent to the server proctoring API when lockdown is active.
+Continuous Camera Audits: A background thread uses QCamera to capture webcam frames at random intervals (3–5 minutes). The frames are uploaded to the proctoring API for Gemini evaluation (detecting face mismatch, multiple people, or smartphones/books).
+Clipboard Sanitizer: Wipes the operating system clipboard buffer upon entering lockdown and blocks copy/paste shortcuts.
+Local SQLite Cache: Maintains an encrypted SQLite file. Typed responses are cached locally every 10 seconds. In the event of network connection failure, the app continues to record answers offline, syncing with MongoDB once the heartbeat recovers.
+Crash-to-Resume Recovery: Saves the session token in an encrypted state file. If the app restarts unexpectedly, the student can click 'Resume Exam', complete a new face validation check, and continue with their remaining time.
+4.6 Gemini Biometric & Proctoring Evaluation Engine (gemini_eval.py)
+A new AI module is introduced to handle user identity verification. Instead of importing complex computer vision local libraries that could break across target machines, the system leverages Gemini's multi-modal capabilities to perform verification:
+Face Matching Payload: The portal reads the three enrolled face templates from GridFS and packs them alongside the live pre-exam verification snapshot as multi-modal image blocks. Gemini is prompted to compare facial details and return a Match/Mismatch verdict.
+Continuous Camera Audits: Gemini receives random background proctoring snapshots. It evaluates for face matching, checks for additional individuals in the background, and flags unauthorized objects like cell phones, reference books, or tablets.
+4.7 API Cost & Quota Optimization (Computational Offloading)
+Running constant multi-modal analysis via Gemini can lead to high request latency and rate limit exhausts. The plan incorporates three mitigation strategies:
+Local Frame-Differencing: The PyQt6 client runs a lightweight pixel comparison using the Pillow library on successive frames. If pixel variance between frames is under 5% (indicating the student is sitting still), the upload is skipped, reducing API traffic by 80%.
+Resolution Downscaling: Webcam snapshots are compressed to a resolution of 320x240 and saved in JPEG format at 60% quality prior to upload. This decreases the input token footprint to a negligible size, maintaining minimum costs.
+Randomized Audit Throttling: The client runs proctoring checks continuously but only selects 3 to 5 random snapshots per hour to send to the Gemini API for biometric verification, keeping a strong proctoring deterrent while staying well within the free-tier API quotas.
+5. Timeline & Project Milestones
+The implementation timeline is structured into six phases spanning ~45 working days (~9 calendar weeks). This estimate is tailored for a 3rd-year BTech Computer Science & Engineering intern, incorporating a 25% project buffer to support thorough testing, debugging, and review cycles.
+Phase
+Focus Area
+Raw Estimate
+Buffered Estimate
+Phase 1
+Foundation & Data Models (reconnection logic, UTC standardization, GridFS, new collections, CSS refactoring)
+8 Days
+10 Days
+Phase 2
+Portal Exam & Admin Dashboards (exam setup with keys, face enrollment wizard, proctoring monitor view, routing, token verification)
+10 Days
+12 Days
+Phase 3
+Security Prechecks & Biometric Match Gate (exam key gates, precheck runs, st.camera biometric capture, Gemini face verification API)
+8 Days
+10 Days
+Phase 4
+Desktop Lockdown App Core (PyQt6 window, keyboard hooks, multi-screen blocks, process scans, heartbeat pings, URL change triggers)
+10 Days
+12 Days
+Phase 5
+Advanced Proctoring & Resilience (PyQt6 background camera capture, dynamic watermark overlay, clipboard sanitizer, offline SQLite cache & resume flow, local differencing filters)
+8 Days
+10 Days
+Phase 6
+Testing, Packaging & Staging (QA, PyInstaller builds for Windows/macOS, README & security settings configuration)
+6 Days
+8 Days
+6. Operating System Boundaries & Limitations
+This section highlights standard operating system boundaries and deployment considerations:
+Ctrl+Alt+Del (Windows): Ctrl+Alt+Del is a hardware interrupt handled directly by the Windows kernel security architecture. Blocking this key sequence at the application level is not supported by standard APIs and requires kernel-level driver development or an active Windows Service. This is out of scope for the application layer of this build and is documented as a native OS boundary.
+Accessibility Permissions (macOS): To monitor keyboard events and override system window controls, macOS requires the user to grant explicit Accessibility Permissions in System Settings on first launch. The application will prompt the user to enable this setting but cannot toggle it automatically.
+QR Code Network Requirements: For local-only development and testing environments, the QR companion upload page requires the student's phone and the server host to reside on the same Wi-Fi/local network. For staging and production setups, exposing the server via a public domain or hosting gateway solves this network constraint.

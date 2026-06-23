@@ -1,134 +1,114 @@
-# 🎓 EduPortal AI — Setup Guide
+# 🎓 EduPortal AI — Setup & Developer Guide
 
-AI-powered question evaluation portal using Streamlit, MongoDB, and Google Gemini.
-
----
-
-## 📋 Prerequisites
-
-- Python 3.9+
-- MongoDB installed and running locally (via MongoDB Compass or `mongod`)
-- Google Gemini API key from [AI Studio](https://aistudio.google.com/app/apikey)
+**EduPortal AI** is a premium, AI-powered academic evaluation and proctored examination platform built using **Flask**, **MongoDB**, and **Google Gemini (gemini-2.5-flash)**. It supports multi-format student answers (Text, Audio, Webcam Image, and QR Companion mobile uploads) with automatic grading and AI assessment.
 
 ---
 
-## 🚀 Quick Start
+## 🎯 Key Features
 
-### 1. Install dependencies
+### 🔐 Security & Anti-Cheating
+- **Simulated OTP Login**: Verifies credentials and generates a 6-digit login OTP (printed to console for local simulation).
+- **Single Active Session Restriction**: Instantly logs out or invalidates old sessions if a student attempts to log in from a different window or device.
+- **Lockdown Browser Integration**: 
+  - Dynamic verification of exam session tokens.
+  - Heartbeat status checks to ensure the client stays online and focused.
+  - Logs proctoring violations (e.g., focus loss, secondary display detection, forbidden processes).
+  - Integrates direct webcam verification inside the exam window.
 
-```bash
-pip install -r requirements.txt
-```
-
-> If `pyaudio` fails on Windows, install it via:
-> ```bash
-> pip install pipwin && pipwin install pyaudio
-> ```
-> On Linux: `sudo apt-get install portaudio19-dev` first.
-
----
-
-### 2. Configure environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and fill in:
-
-```env
-GEMINI_API_KEY=your_actual_gemini_api_key_here
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB=portal_db
-SECRET_KEY=any_random_string_here
-```
-
----
-
-### 3. Start MongoDB
-
-Make sure MongoDB is running locally. Via Compass: just open the app.
-Or via terminal:
-```bash
-mongod --dbpath /data/db
-```
-
----
-
-### 4. Run the app
-
-```bash
-streamlit run app.py
-```
-
-Open [http://localhost:8501](http://localhost:8501) in your browser.
-
----
-
-## 🔐 Default Login Credentials
-
-| Role    | Username  | Password    |
-|---------|-----------|-------------|
-| Admin   | admin     | admin123    |
-| Student | student1  | student123  |
-
-> ⚠️ Change these after first login via the Manage Students tab.
+### 📋 Exams & Grading
+- **Multi-Format Answers**: Students can submit written text, capture photos via webcam, record audio using their microphone, or upload via their mobile device.
+- **QR Code Mobile Upload Companion**: Renders a short-lived tokenized QR code. Students scan this on their phone, take a picture of their handwritten paper, and upload it directly. The desktop exam page polls the DB and auto-updates when received.
+- **Instant MCQ Auto-Grading**: Programmatic grading of Single & Multi-Select MCQs with proportional credit subset scoring (no Gemini quota wasted on MCQs).
+- **Centralized Gemini AI Evaluator**: Comprehensive evaluation grading (Verdict, Score, Analysis, Suggestions) processed on request by the Admin.
 
 ---
 
 ## 🗂️ Project Structure
 
 ```
-portal_app/
-├── app.py              # Main Streamlit entry point
-├── db.py               # MongoDB connection & helpers
-├── gemini_eval.py      # Google Gemini evaluation engine
-├── admin_pages.py      # Admin UI: upload questions, view submissions
-├── student_pages.py    # Student UI: answer questions, view results
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment variable template
-└── README.md           # This file
+login_codex/
+├── app.py                   # Main Flask application (routes, session manager, endpoint APIs)
+├── db.py                    # MongoDB connectors, schema indexes, security tokens, and queries
+├── gemini_eval.py           # Gemini evaluation engine for grading submissions
+├── salesforce_questions.py  # Seed questions imported from Salesforce templates
+├── requirements.txt         # Python project package dependencies
+├── .env.example             # Configuration environment variable template
+├── .gitignore               # Excludes virtualenvs, cache folders, and local secrets
+├── templates/               # Frontend Jinja2 templates (admin, student, base, mobile_upload, login)
+│   ├── base.html            # Main boilerplate layout (SEO metas, fonts, global styles)
+│   ├── login.html           # Login screen with OTP input form
+│   ├── student.html         # Student Test Room workspace and submission history
+│   ├── admin.html           # Admin dashboard: question editor, session monitors, evaluation center
+│   └── mobile_upload.html   # Mobile-friendly capture page for QR upload companion
+├── static/                  # Shared web assets
+│   ├── css/style.css        # Premium dark glassmorphism theme and animations
+│   ├── js/                  # Injected scripts for proctoring checks and webcam
+│   └── audio/               # Sounds for alerts and countdown timers
+└── scratch/                 # Integration test suite and scratch utilities
 ```
 
 ---
 
-## 🎯 Features
+## 📋 Prerequisites
 
-### Admin
-- **Flexible Question Upload**: Support MCQ (Single & Multi-Select), Essay, Math, Code, and Image-based questions.
-- **Dynamic MCQ Selection**: Dynamic form switches between `st.selectbox` and `st.multiselect` depending on the "Allow Multiple Correct Answers" setting.
-- **Inline Question Editor**: Edit existing questions directly in the question manager without losing previously uploaded image assets.
-- **Salesforce Template Loader**: Load 5 predefined Salesforce template questions instantly to populate fields and seed the database.
-- **Custom Grading Rationale**: Set custom explanation/rationale text to be displayed to students on evaluation.
-- **Format Restrictions**: Configure specifically allowed answer formats (Text, Image, and/or Audio) per question.
-- **Submission Hub**: Monitor student results, scores, and Gemini AI evaluations.
-
-### Student
-- **Secure Landing Screen**: Student ID, Name, and Email entry form to unlock and begin the test.
-- **Intermediate Hardware Verification Page**: Dedicated screen to verify webcam (using `st.camera_input`) and microphone permissions before opening the exam. Includes a `🔄 Refresh Page` helper if permissions were blocked.
-- **Exam Integrity Layout**: Bypasses Streamlit's tab containers and sidebar (Sign Out button) completely during the exam, providing a focused, full-width workspace.
-- **Browser Reload Persistence**: Current question index, student details, hardware checks, and all inputted answers persist in MongoDB across tab reloads and browser crashes.
-- **Sequential Exam Sequence**: One question per page navigation (`⬅️ Previous`, `Next ➡️` / `Submit 🚀`) with active progress tracking.
-- **Dynamic Format Tabs**: Renders only the input formats allowed by the administrator for each specific question.
-- **Instant MCQ Auto-Grading**: Saves Gemini API quota by programmatically auto-grading MCQs upon submission. Supports **proportional subset scoring** for multi-correct MCQs (points awarded for correct subsets, zeroed if any wrong choices are checked).
-- **Consolidated AI Evaluations**: Graded all at once at submit-time, with empty answers intercepted locally to output `0/10` instantly.
-- **Results History**: Persistent dashboard tab showing full breakdown of past submissions.
+- **Python 3.9+**
+- **MongoDB** running locally (e.g., through MongoDB Compass or `mongod` service)
+- **Google Gemini API Key** (Get one from [Google AI Studio](https://aistudio.google.com/))
 
 ---
 
-## 🤖 Gemini Evaluation Output
+## 🚀 Quick Start
 
-Each evaluation includes:
-- ✅ **Verdict** — Correct / Partially Correct / Incorrect
-- 📊 **Score** — out of 10
-- 🔍 **Analysis** — detailed breakdown
-- 💡 **Correct Answer & Explanation** — custom rationale and answers
-- 📝 **Suggestions** — improvement tips
+### 1. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+> **Note on Windows Audio**: If your python environment fails to compile audio features, make sure `pyaudio` dependencies are satisfied.
+
+### 2. Configure Environment
+Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+Open `.env` and fill in your actual **Gemini API Key**:
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key_here
+FLASK_SECRET_KEY=eduportal_ai_premium_secret_key_98765
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=portal_db
+```
+
+### 3. Start MongoDB
+Ensure MongoDB is running locally on `localhost:27017`.
+
+### 4. Run the Web Server
+Launch the Flask development server:
+```bash
+python app.py
+```
+Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 ---
 
-## ⚠️ Notes
+## 🔐 Seed User Credentials
 
-- **Secure Contexts**: Web browsers require HTTPS (or `localhost` / `127.0.0.1`) to trigger webcam and microphone permission prompts.
-- **Reload Restoration**: Persists progress securely via the `db.active_exams` collection in MongoDB.
-- **Module Caching**: Automatically calls `importlib.reload` on helper pages on every Streamlit rerun to ensure modifications register without restarting the server.
+On first run, the database is seeded automatically with the following accounts:
+
+| Username | Password | Role |
+| :--- | :--- | :--- |
+| **admin** | admin123 | Administrator |
+| **student1** | student123 | Student |
+
+*Note: Since Simulated OTP is enabled, after entering the password, check your terminal/console output for the 6-digit OTP code to complete login.*
+
+---
+
+## 🤖 Gemini AI Grading Output
+
+Open-ended answers evaluated by Gemini include:
+- **Verdict**: Correct / Partially Correct / Incorrect
+- **Score**: Scaled out of 10 points
+- **Analysis**: Detailed feedback regarding student explanations, misconceptions, and missing points
+- **Correct Answer**: Renders correct answers or custom rubric
+- **Suggestions**: Specific advice for improvement

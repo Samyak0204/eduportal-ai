@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EduPortal AI{% endblock %}</title>
+    
+    <!-- Meta tags for SEO best practices -->
+    <meta name="description" content="EduPortal AI - Advanced AI-powered student assessment and monitoring portal powered by Google Gemini.">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Marked.js for Gemini Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- QRious for mobile upload QR code generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    
+    <!-- Global CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    {% block styles %}{% endblock %}
+</head>
+<body class="{% if session.get('test_active') %}exam-mode{% endif %}">
+
+    <div class="app-container">
+        
+        <!-- Sidebar: Only visible when logged in and not in active exam mode -->
+        {% if session.get('user') and not session.get('test_active') %}
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <i class="fa-solid fa-graduation-cap"></i>
+                <span>EduPortal AI</span>
+            </div>
+            
+            <div class="sidebar-user">
+                <span class="user-name">{{ session['user']['name'] }}</span>
+                <span class="user-role-badge role-{{ session['user']['role'] }}">
+                    {{ session['user']['role'] }}
+                </span>
+                <span style="font-size: 0.8rem; color: var(--text-dim);">@{{ session['user']['username'] }}</span>
+            </div>
+            
+            <ul class="sidebar-menu">
+                {% if session['user']['role'] == 'admin' %}
+                <li class="sidebar-menu-item active" id="menu-admin-dash">
+                    <a href="{{ url_for('admin_dashboard') }}"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
+                </li>
+                {% else %}
+                <li class="sidebar-menu-item active" id="menu-student-dash">
+                    <a href="{{ url_for('student_dashboard') }}"><i class="fa-solid fa-book-open"></i> Test Room</a>
+                </li>
+                {% endif %}
+            </ul>
+            
+            <div class="sidebar-footer">
+                <div style="margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="display:inline-block; width:8px; height:8px; background:var(--success); border-radius:50%;"></span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">🟢 MongoDB Connected</span>
+                </div>
+                <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-block" style="padding: 0.5rem; font-size: 0.85rem;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+                </a>
+                <div style="margin-top: 1rem; text-align: center; color: var(--text-dim);">
+                    EduPortal AI v2.0
+                </div>
+            </div>
+        </aside>
+        {% endif %}
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+        
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
